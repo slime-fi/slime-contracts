@@ -4,8 +4,7 @@
  */
  
 import './SafeMath.sol'; 
-import './IBEP20.sol';
-import './BEP20.sol';
+import './IBEP20.sol'; 
 import './SlimeToken.sol';
 import './ReentrancyGuard.sol';
 

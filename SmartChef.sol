@@ -714,8 +714,10 @@ contract SmartChef is Ownable , ReentrancyGuard {
 
     event Deposit(address indexed user, uint256 amount);
     event Withdraw(address indexed user, uint256 amount);
-    event EmergencyWithdraw(address indexed user, uint256 amount);
-    
+    event EmergencyWithdraw(address indexed user, uint256 amount); 
+    event EmergencyRewardWithdraw( uint256 amount);
+    event StopRewards(uint blockNumber);
+
     IBEP20 stakeToken;
    
     constructor(
@@ -743,8 +745,10 @@ contract SmartChef is Ownable , ReentrancyGuard {
      
     }
 
-    function stopReward() stopReward onlyOwner {
+      function stopReward() external onlyOwner {
         bonusEndBlock = block.number;
+        
+        emit StopRewards(bonusEndBlock);
     }
 
 
@@ -800,7 +804,7 @@ contract SmartChef is Ownable , ReentrancyGuard {
 
 
     // Stake SYRUP tokens to SmartChef
-    function deposit(uint256 _amount) external {
+    function deposit(uint256 _amount) external nonReentrant{
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
 
@@ -821,7 +825,7 @@ contract SmartChef is Ownable , ReentrancyGuard {
     }
 
     // Withdraw Stake tokens from STAKING.
-    function withdraw(uint256 _amount) external {
+    function withdraw(uint256 _amount) external nonReentrant{
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
@@ -840,7 +844,7 @@ contract SmartChef is Ownable , ReentrancyGuard {
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw() external {
+    function emergencyWithdraw() external nonReentrant{
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
         pool.lpToken.safeTransfer(address(msg.sender), user.amount);
@@ -853,6 +857,10 @@ contract SmartChef is Ownable , ReentrancyGuard {
     function emergencyRewardWithdraw(uint256 _amount) external onlyOwner {
         require(_amount < rewardToken.balanceOf(address(this)), 'not enough token');
         rewardToken.safeTransfer(address(msg.sender), _amount);
-    }
 
+        emit EmergencyRewardWithdraw(_amount);
+    }
+ 
+    
+   
 }

@@ -720,8 +720,10 @@ contract SlimeChefWithdrawFee is Ownable ,ReentrancyGuard {
     event Withdraw(address indexed user, uint256 amount);
     event WithdrawFee(address indexed user, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 amount);
+    event EmergencyRewardWithdraw( uint256 amount);
     event UpdateFeeRate(uint256 indexed _previusFee, uint256 indexed newFeeRate);
     event UpdateTreasuryAddress(address indexed previousAddress, address indexed newAddress);
+    event StopRewards(uint blockNumber);
 
     IBEP20 stakeToken;
    
@@ -752,6 +754,8 @@ contract SlimeChefWithdrawFee is Ownable ,ReentrancyGuard {
 
     function stopReward() external onlyOwner {
         bonusEndBlock = block.number;
+        
+        emit StopRewards(bonusEndBlock);
     }
 
 
@@ -805,9 +809,8 @@ contract SlimeChefWithdrawFee is Ownable ,ReentrancyGuard {
         }
     }
 
-
-    // Stake SYRUP tokens to SmartChef
-    function deposit(uint256 _amount) external {
+ 
+    function deposit(uint256 _amount) external nonReentrant {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
 
@@ -830,7 +833,7 @@ contract SlimeChefWithdrawFee is Ownable ,ReentrancyGuard {
         emit Deposit(msg.sender, _amount);
     }
  
-    function withdraw(uint256 _amount) public {
+    function withdraw(uint256 _amount) public nonReentrant {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
@@ -862,7 +865,7 @@ contract SlimeChefWithdrawFee is Ownable ,ReentrancyGuard {
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw() external {
+    function emergencyWithdraw() external nonReentrant{
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
         uint256 _amount = user.amount;
@@ -887,6 +890,8 @@ contract SlimeChefWithdrawFee is Ownable ,ReentrancyGuard {
     function emergencyRewardWithdraw(uint256 _amount) external onlyOwner {
         require(_amount < rewardToken.balanceOf(address(this)), 'not enough token');
         rewardToken.safeTransfer(address(msg.sender), _amount);
+
+        emit EmergencyRewardWithdraw(_amount);
     }
 
     function setFeeRate(uint256 _newRate) external onlyOwner

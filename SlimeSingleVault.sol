@@ -145,7 +145,7 @@ contract SlimeToken is BEP20  {
     }
  
 }
-contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
+contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient,ReentrancyGuard {
     using SafeBEP20 for IBEP20;
     using Address for address;
     using SafeMath for uint256;   
@@ -169,16 +169,16 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
 
     Pool public actualPool;
  
-    event ApprovePool(address smartchef);
+    event doApprovePool(address smartchef);
 
 
-    event AddPool(address _address);
-    event disablePool(address _address);
-    event changeActualPool(address _address);
-    event transferToken(address _address,address to,uint256 amount);
-    event stopPoolWork(address _address);
-    event pause();
-    event unpause();
+    event doAddPool(address _address);
+    event doDisablePool(address _address);
+    event doChangeActualPool(address _address);
+    event doTransferToken(address _address,address to,uint256 amount);
+    event doStopPoolWork(address _address);
+    event doPause();
+    event doUnpause();
     /**
      * @dev Tokens Used:
      * {wbnb} - Required for liquidity routing when doing swaps.
@@ -203,8 +203,8 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
      * {treasury} - Address of the BeefyFinance treasury
      * {vault} - Address of the vault that controls the strategy's funds.
      */
-    address constant public rewardsAddress = address(0x453D4Ba9a2D594314DF88564248497F7D74d6b2C);
-    address constant public treasuryAddress = address(0x0);
+ 
+    address constant public treasuryAddress = address(0x3b015df0f87A47B5B49B734a68E6b9d632EF5704);
 
     uint256 constant public approvalDelay = 500000;
 
@@ -242,13 +242,13 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
          mainToken= _token; 
          main = IBEP20(_token);
          stoken= new SlimeToken(stoken_name,stoken_ticker);
-         dev_slime=owner();
+         devSlime=owner();
  
         IBEP20(wbnb).safeApprove(unirouter, uint(-1));
     }
 
     modifier validatePoolByPid(uint256 _pid) {
-    require (_pid < poolLength() , "Pool does not exist") ;
+    require (_pid < usingPools.length , "Pool does not exist") ;
     _;
     }
 
@@ -391,31 +391,31 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
             return;
         //swap farm token to initial token
  
-        uint totalfees = DEV_FEE.add(HUNTER_FEE).add(TREASURE_FEE); 
+        uint totalfees = devFee.add(hunterFee).add(treasuryFee); 
     
         uint256 cakeFeesBalance =_rewardsAmmount.mul(totalfees).div(1000);
         //hunter reward
-        if(HUNTER_FEE>0)
-        { uint256 hunterFee = cakeFeesBalance.mul(HUNTER_FEE).div(totalfees);
+        if(hunterFee>0)
+        { uint256 hunterFeeAmount = cakeFeesBalance.mul(hunterFee).div(totalfees);
            
             if(hunterReinvest)
             {
-                depositHunter(hunterFee,hunterTo);
+                depositHunter(hunterFeeAmount,hunterTo);
             }else{
                 
-               IBEP20(main).safeTransfer(hunterTo, hunterFee);
+               IBEP20(main).safeTransfer(hunterTo, hunterFeeAmount);
             }
         }
         //dev reward
-        if(DEV_FEE>0)
+        if(devFee>0)
         {
-            uint256 rewardsFee = cakeFeesBalance.mul(DEV_FEE).div(totalfees);
-            IBEP20(main).safeTransfer(dev_slime, rewardsFee);
+            uint256 rewardsFee = cakeFeesBalance.mul(devFee).div(totalfees);
+            IBEP20(main).safeTransfer(devSlime, rewardsFee);
         }
-        if(TREASURE_FEE>0)
+        if(treasuryFee>0)
         {
-            uint256 treasuryFee = cakeFeesBalance.mul(TREASURE_FEE).div(totalfees);
-            IBEP20(main).safeTransfer(treasury, treasuryFee);
+            uint256 treasuryFee = cakeFeesBalance.mul(treasuryFee).div(totalfees);
+            IBEP20(main).safeTransfer(treasuryAddress, treasuryFee);
          } 
     }
  
@@ -445,7 +445,7 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
         if(usingPoolsLength()==0)  
             actualPool= pool;
 
-        emit AddPool(  _smartchef);
+        emit doAddPool(  _smartchef);
      
     }
   
@@ -466,7 +466,7 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
 
         pool.enabled = true; 
 
-        emit ApprovePool(_smartchef);
+        emit doApprovePool(pool.smartchef);
     }
 
     function changeActualPool(uint256 poolId) external onlyOwner nonReentrant  validatePoolByPid(poolId)
@@ -476,7 +476,7 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
         if(pool.enabled)
           {
             chefWithdraw(balanceOfPool());
-            harvestPool(false,dev_slime);     
+            harvestPool(false,devSlime);     
             actualPool=pool;
           }  
  
@@ -488,7 +488,7 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
 
           IBEP20(tokenAddress).safeTransfer(to,_ammount);
 
-          emit transferToken(tokenAddress,to,_ammount);
+          emit doTransferToken(tokenAddress,to,_ammount);
     }
    
  
@@ -503,14 +503,14 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
        IBEP20(main).approve(actualPool.smartchef,0);
         actualPool.enabled=false;
 
-       emit stopPoolWork(actualPool.smartchef);
+       emit doStopPoolWork(actualPool.smartchef);
     }
     /**
      * @dev Pauses the strat.
      */
     function pause() external onlyOwner {
         _pause();
-        emit pause();
+        emit doPause();
     }
 
     /**
@@ -518,7 +518,7 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
      */
     function unpause() external onlyOwner {
         _unpause();
-        emit unpause(); 
+        emit doUnpause(); 
     }
 
  
@@ -558,8 +558,9 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
        return _amount;
     }
 
-     function pendingReward(address who) public view returns (uint256)
+     function getPendingReward(address _who) public view returns (uint256)
     { 
+        address who = _who;
         if(who==address(0x0))
             who = address(this);
 
