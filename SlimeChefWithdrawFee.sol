@@ -670,13 +670,11 @@ contract Ownable is Context {
 }
 
 // File: contracts/SmartChef.sol
+import 'ReentrancyGuard.sol';
 
 pragma solidity 0.6.12;
-
-
  
-
-contract SlimeChefWithdrawFee is Ownable {
+contract SlimeChefWithdrawFee is Ownable ,ReentrancyGuard {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
 
@@ -712,6 +710,8 @@ contract SlimeChefWithdrawFee is Ownable {
     // The block number when CAKE mining ends.
     uint256 public bonusEndBlock;
    
+    uint256 public constant MAX_FEE_RATE = 100;
+
     uint256 public withdrawFeeRate = 50;  
     address public treasuryAddress = address(0x3b015df0f87A47B5B49B734a68E6b9d632EF5704);
     
@@ -720,7 +720,9 @@ contract SlimeChefWithdrawFee is Ownable {
     event Withdraw(address indexed user, uint256 amount);
     event WithdrawFee(address indexed user, uint256 amount);
     event EmergencyWithdraw(address indexed user, uint256 amount);
-    
+    event UpdateFeeRate(uint256 indexed _previusFee, uint256 indexed newFeeRate);
+    event UpdateTreasuryAddress(address indexed previousAddress, address indexed newAddress);
+
     IBEP20 stakeToken;
    
     constructor(
@@ -748,7 +750,7 @@ contract SlimeChefWithdrawFee is Ownable {
      
     }
 
-    function stopReward() public onlyOwner {
+    function stopReward() external onlyOwner {
         bonusEndBlock = block.number;
     }
 
@@ -796,7 +798,7 @@ contract SlimeChefWithdrawFee is Ownable {
     }
 
     // Update reward variables for all pools. Be careful of gas spending!
-    function massUpdatePools() public {
+    function massUpdatePools() external {
         uint256 length = poolInfo.length;
         for (uint256 pid = 0; pid < length; ++pid) {
             updatePool(pid);
@@ -805,39 +807,44 @@ contract SlimeChefWithdrawFee is Ownable {
 
 
     // Stake SYRUP tokens to SmartChef
-    function deposit(uint256 _amount) public {
+    function deposit(uint256 _amount) external {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
 
         updatePool(0);
         if (user.amount > 0) {
             uint256 pending = user.amount.mul(pool.accCakePerShare).div(1e12).sub(user.rewardDebt);
+            user.rewardDebt = user.amount.mul(pool.accCakePerShare).div(1e12);
+            user.amount = user.amount.add(_amount);
+ 
             if(pending > 0) {
                 rewardToken.safeTransfer(address(msg.sender), pending);
             }
         }
         if(_amount > 0) {
             pool.lpToken.safeTransferFrom(address(msg.sender), address(this), _amount);
-            user.amount = user.amount.add(_amount);
+          
         }
-        user.rewardDebt = user.amount.mul(pool.accCakePerShare).div(1e12);
+        
 
         emit Deposit(msg.sender, _amount);
     }
-
-    // Withdraw SYRUP tokens from STAKING.
+ 
     function withdraw(uint256 _amount) public {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
+
         updatePool(0);
         uint256 pending = user.amount.mul(pool.accCakePerShare).div(1e12).sub(user.rewardDebt);
+        user.amount = user.amount.sub(_amount);
+        user.rewardDebt = user.amount.mul(pool.accCakePerShare).div(1e12);
+ 
         if(pending > 0) {
             rewardToken.safeTransfer(address(msg.sender), pending);
         }
         if(_amount > 0) {
-            user.amount = user.amount.sub(_amount);
-            
+          
             if(withdrawFeeRate>0)
             {
                 uint256 withdrawFeeAmount = _amount.mul(withdrawFeeRate).div(1000);
@@ -849,17 +856,19 @@ contract SlimeChefWithdrawFee is Ownable {
              
             pool.lpToken.safeTransfer(address(msg.sender), _amount);
         }
-        user.rewardDebt = user.amount.mul(pool.accCakePerShare).div(1e12);
+       
 
         emit Withdraw(msg.sender, _amount);
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw() public {
+    function emergencyWithdraw() external {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
         uint256 _amount = user.amount;
-        
+        user.amount = 0;
+        user.rewardDebt = 0;
+
            if(withdrawFeeRate>0)
             {
                 uint256 withdrawFeeAmount = _amount.mul(withdrawFeeRate).div(1000);
@@ -868,19 +877,29 @@ contract SlimeChefWithdrawFee is Ownable {
                 
                 emit WithdrawFee(treasuryAddress, withdrawFeeAmount);
             }
-             
-        
-        
+              
         pool.lpToken.safeTransfer(address(msg.sender), _amount);
-        user.amount = 0;
-        user.rewardDebt = 0;
+      
         emit EmergencyWithdraw(msg.sender,_amount);
     }
 
     // Withdraw reward. EMERGENCY ONLY.
-    function emergencyRewardWithdraw(uint256 _amount) public onlyOwner {
+    function emergencyRewardWithdraw(uint256 _amount) external onlyOwner {
         require(_amount < rewardToken.balanceOf(address(this)), 'not enough token');
         rewardToken.safeTransfer(address(msg.sender), _amount);
     }
 
+    function setFeeRate(uint256 _newRate) external onlyOwner
+    {
+        require(_newRate<=MAX_FEE_RATE);
+
+        emit UpdateFeeRate(withdrawFeeRate,_newRate);
+        withdrawFeeRate = _newRate;
+    }
+    
+    function setTreasuryAddress(address _treasuryaddress) external onlyOwner
+    {
+        emit UpdateTreasuryAddress(treasuryAddress,_treasuryaddress);
+        treasuryAddress=_treasuryaddress;
+    }
 }

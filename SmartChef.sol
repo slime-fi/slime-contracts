@@ -673,10 +673,10 @@ contract Ownable is Context {
 
 pragma solidity 0.6.12;
 
-
+import 'ReentrancyGuard.sol';
  
 
-contract SmartChef is Ownable {
+contract SmartChef is Ownable , ReentrancyGuard {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
 
@@ -705,7 +705,7 @@ contract SmartChef is Ownable {
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
     mapping (address => UserInfo) public userInfo;
-    // Total allocation poitns. Must be the sum of all allocation points in all pools.
+    // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 private totalAllocPoint = 0;
     // The block number when CAKE mining starts.
     uint256 public startBlock;
@@ -743,7 +743,7 @@ contract SmartChef is Ownable {
      
     }
 
-    function stopReward() public onlyOwner {
+    function stopReward() stopReward onlyOwner {
         bonusEndBlock = block.number;
     }
 
@@ -791,7 +791,7 @@ contract SmartChef is Ownable {
     }
 
     // Update reward variables for all pools. Be careful of gas spending!
-    function massUpdatePools() public {
+    function massUpdatePools() external {
         uint256 length = poolInfo.length;
         for (uint256 pid = 0; pid < length; ++pid) {
             updatePool(pid);
@@ -800,7 +800,7 @@ contract SmartChef is Ownable {
 
 
     // Stake SYRUP tokens to SmartChef
-    function deposit(uint256 _amount) public {
+    function deposit(uint256 _amount) external {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
 
@@ -820,8 +820,8 @@ contract SmartChef is Ownable {
         emit Deposit(msg.sender, _amount);
     }
 
-    // Withdraw SYRUP tokens from STAKING.
-    function withdraw(uint256 _amount) public {
+    // Withdraw Stake tokens from STAKING.
+    function withdraw(uint256 _amount) external {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
         require(user.amount >= _amount, "withdraw: not good");
@@ -840,7 +840,7 @@ contract SmartChef is Ownable {
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw() public {
+    function emergencyWithdraw() external {
         PoolInfo storage pool = poolInfo[0];
         UserInfo storage user = userInfo[msg.sender];
         pool.lpToken.safeTransfer(address(msg.sender), user.amount);
@@ -850,7 +850,7 @@ contract SmartChef is Ownable {
     }
 
     // Withdraw reward. EMERGENCY ONLY.
-    function emergencyRewardWithdraw(uint256 _amount) public onlyOwner {
+    function emergencyRewardWithdraw(uint256 _amount) external onlyOwner {
         require(_amount < rewardToken.balanceOf(address(this)), 'not enough token');
         rewardToken.safeTransfer(address(msg.sender), _amount);
     }

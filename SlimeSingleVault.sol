@@ -5,6 +5,7 @@ import './BEP20.sol';
 import './SafeMath.sol'; 
 import './IBEP20.sol';  
 import './SafeBEP20.sol';   
+import './ReentrancyGuard.sol';
 
 interface IUniswapRouter {
     function swapExactTokensForTokens(
@@ -108,11 +109,11 @@ contract Pausable is Context {
  // CakeToken with Governance.
 contract SlimeToken is BEP20  {
     /// @notice Creates `_amount` token to `_to`. Must only be called by the owner (MasterChef).
-    function mint(address _to, uint256 _amount) public onlyOwner {
+    function mint(address _to, uint256 _amount) external onlyOwner {
         _mint(_to, _amount);
        
     }
-    function burn(address _from, uint256 _amount) public onlyOwner {
+    function burn(address _from, uint256 _amount) external onlyOwner {
         _burn(_from, _amount);
          
     }
@@ -167,14 +168,17 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
 
 
     Pool public actualPool;
-    /**
-     * @dev Pool Management Events 
-     * AddUpcomingPool - fired when a new pool is initially proposed.
-     * ApprovePool - fired when the pool is made available for harvesting. 
-     */
-    event AddUpcomingPool(address smartchef);
+ 
     event ApprovePool(address smartchef);
 
+
+    event AddPool(address _address);
+    event disablePool(address _address);
+    event changeActualPool(address _address);
+    event transferToken(address _address,address to,uint256 amount);
+    event stopPoolWork(address _address);
+    event pause();
+    event unpause();
     /**
      * @dev Tokens Used:
      * {wbnb} - Required for liquidity routing when doing swaps.
@@ -199,29 +203,18 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
      * {treasury} - Address of the BeefyFinance treasury
      * {vault} - Address of the vault that controls the strategy's funds.
      */
-    address constant public rewards = address(0x453D4Ba9a2D594314DF88564248497F7D74d6b2C);
-    address constant public treasury = address(0x0);
+    address constant public rewardsAddress = address(0x453D4Ba9a2D594314DF88564248497F7D74d6b2C);
+    address constant public treasuryAddress = address(0x0);
 
-    uint256 public approvalDelay = 500000;
+    uint256 constant public approvalDelay = 500000;
 
-    address public dev_slime;
-    /**
-     * @dev Distribution of fees earned. This allocations relative to the % implemented on chargeFees().
-     * Current implementation separates 6% for fees.
-     *
-     * {REWARDS_FEE} - 4% goes to BIFI holders through the {rewards} pool.
-     * {CALL_FEE} - 0.5% goes to whoever executes the harvest function as gas subsidy.
-     * {TREASURY_FEE} - 1.5% goes to the treasury.
-     * {MAX_FEE} - Aux const used to safely calc the correct amounts.
-     *
-     * {WITHDRAWAL_FEE} - Fee taxed when a user withdraws funds. 10 === 0.1% fee.
-     * {WITHDRAWAL_MAX} - Aux const used to safely calc the correct amounts.
-     */
-    uint  public DEV_FEE = 5;
-    uint  public HUNTER_FEE = 5; 
-    uint  public TREASURE_FEE = 5;
+    address public devSlime;
+    
+    uint constant public devFee = 5;
+    uint constant public hunterFee = 5; 
+    uint constant public treasuryFee = 5;
 
-    uint  public MAX_FEE = 50;
+    uint constant public  maxFee = 50;
     /**
      * @dev Routes we take to swap tokens using PancakeSwap.
      * {outputToCakeRoute} - Route we take to get from {output} into {cake}.
@@ -254,12 +247,16 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
         IBEP20(wbnb).safeApprove(unirouter, uint(-1));
     }
 
-    
+    modifier validatePoolByPid(uint256 _pid) {
+    require (_pid < poolLength() , "Pool does not exist") ;
+    _;
+    }
+
     /**
      * @dev Function for various UIs to display the current value of one of our yield tokens.
      * Returns an uint256 with 18 decimals of how much underlying asset one vault share represents.
      */
-    function getPricePerFullShare() public view returns (uint256) {
+    function getPricePerFullShare() external view returns (uint256) {
         return balanceOf().mul(1e18).div(stoken.totalSupply());
     }
 
@@ -424,7 +421,7 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
  
     //if any param is diferent or mannually dev add
     function addPool(address _smartchef, address _output,address _unirouter,address[] memory _outputToMainRoute
-    ) external onlyOwner {
+    ) external onlyOwner nonReentrant {
   
         IBEP20(_output).safeApprove(unirouter, uint(-1));
         IBEP20(main).approve(_smartchef,uint256(-1));
@@ -447,18 +444,19 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
 
         if(usingPoolsLength()==0)  
             actualPool= pool;
-  
-        emit ApprovePool(_smartchef);
+
+        emit AddPool(  _smartchef);
+     
     }
   
-    function disablePool(uint256 poolId) public onlyOwner  {
+    function disablePool(uint256 poolId) external onlyOwner nonReentrant  validatePoolByPid(poolId) {
         Pool storage pool = usingPools[poolId]; 
 
         IBEP20(main).approve(pool.smartchef,0);
         pool.enabled=false;
     }
  
-     function enablePool(uint256 poolId) public onlyOwner  { 
+     function enablePool(uint256 poolId) external onlyOwner nonReentrant  validatePoolByPid(poolId) { 
         Pool storage pool = usingPools[poolId]; 
 
         require(pool.added.add(approvalDelay) < block.timestamp, "Delay has not passed");
@@ -467,9 +465,11 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
         IBEP20(main).approve(pool.smartchef,uint256(-1));
 
         pool.enabled = true; 
+
+        emit ApprovePool(_smartchef);
     }
 
-    function changeActualPool(uint256 poolId) public onlyOwner
+    function changeActualPool(uint256 poolId) external onlyOwner nonReentrant  validatePoolByPid(poolId)
     {
         Pool memory pool = usingPools[poolId]; 
 
@@ -482,34 +482,35 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
  
     }
   
-    //enviar tokens alternos al main y output actuales
+    //withdraw other tokens diferent to stake & reward
     function transferToken(address tokenAddress,address to,uint256 _ammount) external onlyOwner{
           require(tokenAddress!=mainToken && tokenAddress!=actualPool.output);
 
           IBEP20(tokenAddress).safeTransfer(to,_ammount);
+
+          emit transferToken(tokenAddress,to,_ammount);
     }
    
-     //enviar bnb . ?porque habria bnb quien sabe
-   function withdrawBnb(address payable _to, uint256 _amount) external   onlyOwner {
-         
-        _to.transfer(_amount);
-    }
+ 
     /**
      * Retiro de emergencia
      */
-    function stopPoolWork() public onlyOwner {
+    function stopPoolWork() external onlyOwner nonReentrant{
        _pause(); 
       
         ISmartChef(actualPool.smartchef).emergencyWithdraw(); 
 
        IBEP20(main).approve(actualPool.smartchef,0);
         actualPool.enabled=false;
+
+       emit stopPoolWork(actualPool.smartchef);
     }
     /**
      * @dev Pauses the strat.
      */
     function pause() external onlyOwner {
         _pause();
+        emit pause();
     }
 
     /**
@@ -517,10 +518,11 @@ contract SlimeSingleVault is Ownable, Pausable ,IRewardDistributionRecipient {
      */
     function unpause() external onlyOwner {
         _unpause();
+        emit unpause(); 
     }
 
  
-    function isPoolEnabled(uint256 id) public view   returns(bool)
+    function isPoolEnabled(uint256 id) external view   returns(bool)
     {
         return usingPools[id].enabled ;
     }    

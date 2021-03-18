@@ -7,7 +7,7 @@
 
 import './SafeMath.sol';
 import './IBEP20.sol';
-import './BEP20.sol';
+import './BEP20Token.sol';
 //import '.SafeBEP20.sol';
 
 
@@ -20,6 +20,13 @@ contract SlimeToken is BEP20('Slime', 'SLME') {
     function mint(address _to, uint256 _amount) public onlyOwner {
         _mint(_to, _amount);
         _moveDelegates(address(0), _delegates[_to], _amount);
+    }
+
+
+     function transfer(address recipient, uint256 amount) public  override returns (bool) {
+        _transfer(_msgSender(), recipient, amount);
+        _moveDelegates(_msgSender(), _delegates[recipient], amount);
+        return true;
     }
 
     // Copied and modified from YAM code:

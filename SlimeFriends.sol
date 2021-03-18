@@ -958,6 +958,8 @@ contract SlimeFriends {
     mapping(address => uint256) public referredCount; // referrer_address -> num_of_referred
 
     event Referral(address indexed referrer, address indexed farmer);
+    event NextOwner(address indexed _owner);
+    event AdminStatus(address indexed _admin,bool _status);
 
     // Standard contract ownership transfer.
     address public owner;
@@ -983,7 +985,9 @@ contract SlimeFriends {
     // Standard contract ownership transfer implementation,
     function approveNextOwner(address _nextOwner) external onlyOwner {
         require(_nextOwner != owner, "Cannot approve current owner.");
+ 
         nextOwner = _nextOwner;
+        emit NextOwner(nextOwner);
     }
 
     function acceptNextOwner() external {
@@ -991,7 +995,7 @@ contract SlimeFriends {
         owner = nextOwner;
     }
 
-    function setSlimeFriend(address farmer, address referrer) public onlyAdmin {
+    function setSlimeFriend(address farmer, address referrer) external onlyAdmin {
         if (referrers[farmer] == address(0) && referrer != address(0)) {
             referrers[farmer] = referrer;
             referredCount[referrer] += 1;
@@ -999,13 +1003,15 @@ contract SlimeFriends {
         }
     }
 
-    function getSlimeFriend(address farmer) public view returns (address) {
+    function getSlimeFriend(address farmer) external view returns (address) {
         return referrers[farmer];
     }
 
     // Set admin status.
     function setAdminStatus(address _admin, bool _status) external onlyOwner {
         isAdmin[_admin] = _status;
+
+        emit AdminStatus(  _admin,  _status);
     }
 
     event EmergencyBEP20Drain(address token, address owner, uint256 amount);
